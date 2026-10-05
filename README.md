@@ -23,3 +23,6 @@ A Photoshop JSX script that automates the precise 3-point color matching techniq
    * **For a Flat Texture Match (Drop 2):** Target Mid -> Ref Flat Color.
 4. Select your target layer in the Layers panel.
 5. Go to `File > Scripts > ColorMatch` to generate the matching curve!
+
+## Acknowledgements
+This tool was directly inspired by **PiXimperfect's** fantastic manual color matching tutorial. You can watch the original video explaining the math and technique behind this script here: [The "3-Point Curve" Formula to Exact-Match Colors!](https://youtu.be/zV6peLaJ0tY)
