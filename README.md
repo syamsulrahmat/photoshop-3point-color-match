@@ -1,11 +1,14 @@
-# Photoshop 3-Point Color Match
+# Photoshop Auto Texture Match
 
-A Photoshop JSX script that automates the precise 3-point color matching technique using the Color Sampler tool and Curves. This is perfect for seamlessly matching the color grade and lighting of a CG render to a client's reference photo.
+A lightning-fast, pure ExtendScript plugin for Photoshop that instantly color-matches CG materials to flat client textures using algorithmic averaging. 
+
+This tool completely removes the need for manual color picking, Python dependencies, or complex setup. It leverages Photoshop's native C++ `Average` filter and Histogram data to mathematically extract dominant midtones and perfectly shift hues without destroying your CG contrast.
 
 ## Features
-* **Full 3-Point Match (6 Samplers):** Automates the popular "PiXimperfect" technique. Select Shadows, Midtones, and Highlights on both your Target and Reference images, and the script builds a perfect 1-to-1 RGB Curve adjustment.
-* **Flat Texture Match (2 Samplers):** Perfect for matching CG renders to flat color swatches. Shifts the midtones while safely anchoring your existing shadows and highlights so you don't crush your lighting.
-* **100% Non-Destructive:** The result is a single, cleanly grouped Curves Adjustment Layer clipped directly to your target.
+* **Automated Averaging:** No need to guess where the "average" color is. The script instantly averages out all noise, lighting, and pores to find the true mathematical color of both materials.
+* **Contrast Preserving:** By extracting and mapping only the dominant Midtone, the generated Curve safely anchors your absolute blacks (0) and whites (255). This prevents the "crunchy" texture artifacts common in standard matching methods.
+* **Instant & Offline:** Uses 100% native ExtendScript. Runs in milliseconds, zero external dependencies required.
+* **Non-Destructive:** Outputs a perfectly clipped Curves Adjustment Layer so you can tweak the opacity manually.
 
 ## Installation
 1. Download the `ColorMatch.jsx` file.
@@ -15,14 +18,8 @@ A Photoshop JSX script that automates the precise 3-point color matching techniq
 3. Restart Photoshop. The script will now be available under `File > Scripts > ColorMatch`.
 
 ## How to Use
-1. Open your target image (e.g. CG render) and reference image in the same Photoshop document.
-2. Select the **Color Sampler Tool** (hidden under the Eyedropper tool `I`).
-   * *Tip: Change the Sample Size in the top bar to '11 by 11 Average' to prevent sampling noisy pixels.*
-3. Click to drop your samplers:
-   * **For a Full Match (Drop 6):** Target Shadow, Target Mid, Target Highlight -> Ref Shadow, Ref Mid, Ref Highlight.
-   * **For a Flat Texture Match (Drop 2):** Target Mid -> Ref Flat Color.
-4. Select your target layer in the Layers panel.
-5. Go to `File > Scripts > ColorMatch` to generate the matching curve!
-
-## Acknowledgements
-This tool was directly inspired by **PiXimperfect's** fantastic manual color matching tutorial. You can watch the original video explaining the math and technique behind this script here: [The "3-Point Curve" Formula to Exact-Match Colors!](https://youtu.be/zV6peLaJ0tY)
+1. Open your target image (CG render) in Photoshop.
+2. Use the **Lasso** or **Marquee** tool to make a rough selection around the specific material/siding you want to change.
+3. Go to `File > Scripts > ColorMatch`.
+4. A file browser will pop up. Select your client's flat reference texture (e.g. JPG swatch) from your hard drive.
+5. The script will instantly analyze both, close the texture, and drop the perfect matching Curve onto your render!
