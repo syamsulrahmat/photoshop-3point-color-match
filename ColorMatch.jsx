@@ -1,5 +1,5 @@
-// ColorMatch.jsx - Manual 3-Point Color Match via Color Samplers
-// Automates the PiXimperfect exact-match method.
+// ColorMatch.jsx - Manual 3-Point Color Match with Auto-Blur
+// Automates the PiXimperfect exact-match method and auto-averages textures.
 
 #target photoshop
 
@@ -14,22 +14,37 @@ function main() {
     
     if (len !== 6 && len !== 2) {
         alert("INSTRUCTIONS:\n\n" +
-              "TIP: In the top toolbar, change the Color Sampler 'Sample Size' from 'Point Sample' to '11 by 11 Average' to avoid selecting bad/noisy pixels on textures!\n\n" +
               "MODE A: Flat Texture Match (Use 2 Samplers)\n" +
               "   Point 1: Target Image's Midtone\n" +
-              "   Point 2: Client's Flat Texture Color\n" +
-              "   (This tints the CG midtones while perfectly preserving your CG shadows and highlights!)\n\n" +
+              "   Point 2: Client's Flat Texture Color\n\n" +
               "MODE B: Full 3-Point Match (Use 6 Samplers)\n" +
               "   1, 2, 3: Target Image's Shadow, Midtone, Highlight\n" +
               "   4, 5, 6: Reference Image's Shadow, Midtone, Highlight\n\n" +
-              "Place either 2 or 6 samplers, select your Target Layer, and run this script.");
+              "Place your samplers, select your Target Layer, and run this script. The script will automatically blur the image behind the scenes to extract the perfect smooth average color!");
         return;
     }
     
+    doc.suspendHistory("Auto-Blur Color Match", "runAutoBlurMatch(doc, len)");
+}
+
+function runAutoBlurMatch(doc, len) {
+    // 1. Stamp visible layers to a new temporary layer at the top
+    var idMrgV = charIDToTypeID( "MrgV" );
+    var desc = new ActionDescriptor();
+    desc.putBoolean( charIDToTypeID( "Dplc" ), true );
+    executeAction( idMrgV, desc, DialogModes.NO );
+    
+    var tempLayer = doc.activeLayer;
+    tempLayer.name = "Temp_AutoBlur_Script";
+    
+    // 2. Apply a heavy Gaussian Blur to smooth out all texture and noise!
+    // This perfectly replicates the user's manual blurring trick.
+    tempLayer.applyGaussianBlur(25);
+    
+    // 3. Read the Color Samplers (they will now read the perfectly averaged, blurred colors!)
     var params = { castR: [], castG: [], castB: [] };
     
     if (len === 2) {
-        // FLAT TEXTURE MODE
         var tM = doc.colorSamplers[0].color.rgb;
         var rM = doc.colorSamplers[1].color.rgb;
         
@@ -38,7 +53,6 @@ function main() {
         params.castB = [ [Math.round(tM.blue), Math.round(rM.blue)] ];
         
     } else if (len === 6) {
-        // FULL 3-POINT MODE
         var tS = doc.colorSamplers[0].color.rgb;
         var tM = doc.colorSamplers[1].color.rgb;
         var tH = doc.colorSamplers[2].color.rgb;
@@ -66,7 +80,10 @@ function main() {
         ];
     }
     
-    // Ensure inputs are strictly ascending so Photoshop Curves don't cross over themselves and error
+    // 4. Delete the temporary blurred layer to restore the sharp document
+    tempLayer.remove();
+    
+    // 5. Ensure inputs are strictly ascending so Photoshop Curves don't cross over themselves
     function sortPts(pts) {
         if (pts.length === 1) return pts;
         pts.sort(function(a, b) { return a[0] - b[0]; });
@@ -79,11 +96,8 @@ function main() {
     params.castG = sortPts(params.castG);
     params.castB = sortPts(params.castB);
     
-    doc.suspendHistory("Color Match via Samplers", "applyColorMatchCurves(params)");
-}
-
-function applyColorMatchCurves(params) {
-    makeCurvesLayer("Exact 3-Point Color Match", "Nrml", [
+    // 6. Generate the Curve layer
+    makeCurvesLayer("Auto-Blurred 3-Point Match", "Nrml", [
         { ch: 'Rd  ', pts: params.castR },
         { ch: 'Grn ', pts: params.castG },
         { ch: 'Bl  ', pts: params.castB }
@@ -105,13 +119,7 @@ function makeCurvesLayer(name, blendMode, channels) {
     
     var lay = new ActionDescriptor();
     lay.putString(cTID('Nm  '), name);
-    
-    // Automatically clip to the layer below
-    lay.putBoolean(sTID('group'), true);
-    
-    if (blendMode !== 'Nrml') {
-        lay.putEnumerated(cTID('Md  '), cTID('BlnM'), cTID(blendMode));
-    }
+    lay.putBoolean(sTID('group'), true); // Clip mask
     
     var crv = new ActionDescriptor();
     var adj = new ActionList();
