@@ -1,4 +1,4 @@
-# Photoshop Auto Texture Match
+# Photoshop Auto Color Match
 
 A lightning-fast, pure ExtendScript plugin for Photoshop that instantly color-matches CG materials to flat client textures using algorithmic averaging. 
 
