@@ -2,7 +2,7 @@
 
 A lightning-fast, pure ExtendScript plugin for Photoshop that instantly color-matches CG materials to flat client textures using algorithmic averaging. 
 
-This tool completely removes the need for manual color picking, Python dependencies, or complex setup. It leverages Photoshop's native C++ `Average` filter and Histogram data to mathematically extract dominant midtones and perfectly shift hues without destroying your CG contrast.
+This tool completely removes the need for manual color picking. It leverages Photoshop's native C++ `Average` filter and Histogram data to mathematically extract dominant midtones and perfectly shift hues without destroying your CG contrast.
 
 ## Features
 * **Automated Averaging:** No need to guess where the "average" color is. The script instantly averages out all noise, lighting, and pores to find the true mathematical color of both materials.
