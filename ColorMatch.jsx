@@ -1,111 +1,147 @@
-// ColorMatch.jsx - Manual 3-Point Color Match with Auto-Blur
-// Automates the PiXimperfect exact-match method and auto-averages textures.
+// ColorMatch.jsx - The Ultimate AI Integration
+// Extracts selection, prompts for reference file, runs Python AI invisibly, and builds the Curve.
 
 #target photoshop
 
 function main() {
     if (app.documents.length === 0) {
-        alert("Please open a document.");
+        alert("Please open a document containing your CG render.");
         return;
     }
 
     var doc = app.activeDocument;
-    var len = doc.colorSamplers.length;
     
-    if (len !== 6 && len !== 2) {
-        alert("INSTRUCTIONS:\n\n" +
-              "MODE A: Flat Texture Match (Use 2 Samplers)\n" +
-              "   Point 1: Target Image's Midtone\n" +
-              "   Point 2: Client's Flat Texture Color\n\n" +
-              "MODE B: Full 3-Point Match (Use 6 Samplers)\n" +
-              "   1, 2, 3: Target Image's Shadow, Midtone, Highlight\n" +
-              "   4, 5, 6: Reference Image's Shadow, Midtone, Highlight\n\n" +
-              "Place your samplers, select your Target Layer, and run this script. The script will automatically blur the image behind the scenes to extract the perfect smooth average color!");
+    var hasSelection = true;
+    try {
+        var bnd = doc.selection.bounds;
+    } catch(e) {
+        hasSelection = false;
+    }
+    
+    if (!hasSelection) {
+        var proceed = confirm("Warning: You didn't make a selection (marching ants)!\n\nThe AI will analyze the ENTIRE image, which might grab colors from your sky or background instead of the specific material. Do you want to proceed anyway?");
+        if (!proceed) return;
+    }
+    
+    // Prompt the user to select the Client Reference image from their hard drive
+    var refFile = File.openDialog("Select the Client Reference Image (e.g. Texture or Swatch)", "*.*");
+    
+    if (refFile === null) {
+        return; // User cancelled the file picker
+    }
+    
+    doc.suspendHistory("AI Color Match", "runFullAIPipeline(doc, doc.activeLayer, refFile, hasSelection)");
+}
+
+function runFullAIPipeline(doc, targetLayer, refFile, hasSelection) {
+    var tempDir = Folder.temp;
+    var targetPng = new File(tempDir + "/ai_target.png");
+    var scriptOutput = new File(tempDir + "/ai_curve_output.jsx");
+    
+    // Clean up old files
+    if (targetPng.exists) targetPng.remove();
+    if (scriptOutput.exists) scriptOutput.remove();
+
+    // --- EXPORT TARGET ---
+    exportSelectionToPNG(doc, targetPng, hasSelection);
+    
+    // Restore active layer just in case
+    doc.activeLayer = targetLayer;
+    
+    // --- RUN PYTHON AI ---
+    var pythonScript = "C:\\Users\\PC-207\\Nextcloud\\SMB RRI\\Projects\\Antigravity\\Photoshop color matching tool\\ai_headless_worker.py";
+    var pythonExe = "C:\\Python314\\python.exe";
+    var logFile = new File(tempDir + "/ai_log.txt");
+    if (logFile.exists) logFile.remove();
+    
+    // Ensure refFile is a valid File object (openDialog sometimes returns a string)
+    var refFileObj = (refFile instanceof File) ? refFile : new File(refFile);
+    
+    // Create a robust batch file to handle execution and log any python crashes
+    var batFile = new File(tempDir + "/run_ai_match.bat");
+    batFile.encoding = "UTF-8"; // CRITICAL: Fixes silent fail when path has Japanese characters
+    batFile.open("w");
+    batFile.writeln('chcp 65001 > nul'); // Force command prompt to use UTF-8
+    batFile.writeln('@echo off');
+    batFile.writeln('"' + pythonExe + '" "' + pythonScript + '" "' + targetPng.fsName + '" "' + refFileObj.fsName + '" "' + scriptOutput.fsName + '" > "' + logFile.fsName + '" 2>&1');
+    batFile.close();
+    
+    $.sleep(200); // Give Windows a moment to flush the file to disk
+    
+    // Execute the batch file asynchronously and poll for completion
+    batFile.execute();
+    
+    // Wait for up to 15 seconds for Python to finish
+    var maxWait = 30; // 30 * 500ms = 15 seconds
+    while (maxWait > 0 && !scriptOutput.exists) {
+        $.sleep(500);
+        
+        // If the log file exists and contains the word "Traceback" or "Error", it crashed!
+        if (logFile.exists) {
+            logFile.open("r");
+            var logText = logFile.read();
+            logFile.close();
+            if (logText.indexOf("Traceback") !== -1 || logText.indexOf("Error:") !== -1) {
+                break; // Break early if Python crashed
+            }
+        }
+        maxWait--;
+    }
+    
+    // --- READ AND APPLY CURVE ---
+    // Deselect so Photoshop doesn't automatically create a pixel mask on the Curve
+    try { doc.selection.deselect(); } catch(e) {}
+
+    if (scriptOutput.exists) {
+        $.evalFile(scriptOutput);
+    } else {
+        var errorMsg = "The AI failed to generate the curve.\n\n";
+        if (logFile.exists) {
+            logFile.open("r");
+            errorMsg += "PYTHON ERROR LOG:\n" + logFile.read();
+            logFile.close();
+        }
+        alert(errorMsg);
+    }
+    
+    // Clean up
+    if (targetPng.exists) targetPng.remove();
+    if (scriptOutput.exists) scriptOutput.remove();
+}
+
+function exportSelectionToPNG(doc, fileObj, hasSelection) {
+    if (!hasSelection) {
+        doc.selection.selectAll();
+    }
+    
+    try {
+        doc.selection.copy();
+    } catch(e) {
+        // If selection is empty, just create a blank tiny doc
+        var blankDoc = app.documents.add(10, 10, doc.resolution, "TempExp", NewDocumentMode.RGB, DocumentFill.TRANSPARENT);
+        saveAsPNG(blankDoc, fileObj);
+        blankDoc.close(SaveOptions.DONOTSAVECHANGES);
         return;
     }
     
-    doc.suspendHistory("Auto-Blur Color Match", "runAutoBlurMatch(doc, len)");
+    var tempDoc = app.documents.add(doc.width, doc.height, doc.resolution, "TempExp", NewDocumentMode.RGB, DocumentFill.TRANSPARENT);
+    tempDoc.paste();
+    
+    // Trim away all the blank transparency to make the file tiny and fast for Python to read
+    tempDoc.trim(TrimType.TRANSPARENT);
+    
+    saveAsPNG(tempDoc, fileObj);
+    tempDoc.close(SaveOptions.DONOTSAVECHANGES);
 }
 
-function runAutoBlurMatch(doc, len) {
-    // 1. Stamp visible layers to a new temporary layer at the top
-    var idMrgV = charIDToTypeID( "MrgV" );
-    var desc = new ActionDescriptor();
-    desc.putBoolean( charIDToTypeID( "Dplc" ), true );
-    executeAction( idMrgV, desc, DialogModes.NO );
-    
-    var tempLayer = doc.activeLayer;
-    tempLayer.name = "Temp_AutoBlur_Script";
-    
-    // 2. Apply a heavy Gaussian Blur to smooth out all texture and noise!
-    // This perfectly replicates the user's manual blurring trick.
-    tempLayer.applyGaussianBlur(25);
-    
-    // 3. Read the Color Samplers (they will now read the perfectly averaged, blurred colors!)
-    var params = { castR: [], castG: [], castB: [] };
-    
-    if (len === 2) {
-        var tM = doc.colorSamplers[0].color.rgb;
-        var rM = doc.colorSamplers[1].color.rgb;
-        
-        params.castR = [ [Math.round(tM.red), Math.round(rM.red)] ];
-        params.castG = [ [Math.round(tM.green), Math.round(rM.green)] ];
-        params.castB = [ [Math.round(tM.blue), Math.round(rM.blue)] ];
-        
-    } else if (len === 6) {
-        var tS = doc.colorSamplers[0].color.rgb;
-        var tM = doc.colorSamplers[1].color.rgb;
-        var tH = doc.colorSamplers[2].color.rgb;
-        
-        var rS = doc.colorSamplers[3].color.rgb;
-        var rM = doc.colorSamplers[4].color.rgb;
-        var rH = doc.colorSamplers[5].color.rgb;
-        
-        params.castR = [
-            [Math.round(tS.red), Math.round(rS.red)],
-            [Math.round(tM.red), Math.round(rM.red)],
-            [Math.round(tH.red), Math.round(rH.red)]
-        ];
-        
-        params.castG = [
-            [Math.round(tS.green), Math.round(rS.green)],
-            [Math.round(tM.green), Math.round(rM.green)],
-            [Math.round(tH.green), Math.round(rH.green)]
-        ];
-        
-        params.castB = [
-            [Math.round(tS.blue), Math.round(rS.blue)],
-            [Math.round(tM.blue), Math.round(rM.blue)],
-            [Math.round(tH.blue), Math.round(rH.blue)]
-        ];
-    }
-    
-    // 4. Delete the temporary blurred layer to restore the sharp document
-    tempLayer.remove();
-    
-    // 5. Ensure inputs are strictly ascending so Photoshop Curves don't cross over themselves
-    function sortPts(pts) {
-        if (pts.length === 1) return pts;
-        pts.sort(function(a, b) { return a[0] - b[0]; });
-        if (pts[1][0] <= pts[0][0]) pts[1][0] = Math.min(255, pts[0][0] + 1);
-        if (pts[2][0] <= pts[1][0]) pts[2][0] = Math.min(255, pts[1][0] + 1);
-        return pts;
-    }
-    
-    params.castR = sortPts(params.castR);
-    params.castG = sortPts(params.castG);
-    params.castB = sortPts(params.castB);
-    
-    // 6. Generate the Curve layer
-    makeCurvesLayer("Auto-Blurred 3-Point Match", "Nrml", [
-        { ch: 'Rd  ', pts: params.castR },
-        { ch: 'Grn ', pts: params.castG },
-        { ch: 'Bl  ', pts: params.castB }
-    ]);
+function saveAsPNG(doc, fileObj) {
+    var opts = new PNGSaveOptions();
+    opts.compression = 9; // Fast save
+    doc.saveAs(fileObj, opts, true, Extension.LOWERCASE);
 }
 
 // ============================================================================
-// ActionManager (Layer Creation)
+// ActionManager Helpers for the AI to call
 // ============================================================================
 
 function cTID(s) { return app.charIDToTypeID(s); }
@@ -119,7 +155,7 @@ function makeCurvesLayer(name, blendMode, channels) {
     
     var lay = new ActionDescriptor();
     lay.putString(cTID('Nm  '), name);
-    lay.putBoolean(sTID('group'), true); // Clip mask
+    lay.putBoolean(sTID('group'), true); // Restored Clipping Mask
     
     var crv = new ActionDescriptor();
     var adj = new ActionList();
